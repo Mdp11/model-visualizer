@@ -1,0 +1,54 @@
+{
+  "elements": {
+    "Application": {
+      "is_owned_by_one_of": ["Domain"],
+      "is_typed_by_one_of": ["ApplicationType"],
+      "id_properties": ["name"],
+      "properties": ["version", "status"],
+      "optional_properties": ["description", "vendor"]
+    },
+    "Domain": {
+      "is_owned_by_one_of": [],
+      "is_typed_by_one_of": ["DomainType"],
+      "id_properties": ["name"],
+      "properties": ["level"],
+      "optional_properties": ["description"]
+    },
+    "Server": {
+      "is_owned_by_one_of": ["Environment"],
+      "is_typed_by_one_of": ["ServerType"],
+      "id_properties": ["hostname"],
+      "properties": ["os", "ip_address"],
+      "optional_properties": ["cpu_count", "memory_gb"]
+    },
+    "Environment": {
+      "is_owned_by_one_of": ["Domain"],
+      "is_typed_by_one_of": ["EnvironmentType"],
+      "id_properties": ["name"],
+      "properties": ["stage"],
+      "optional_properties": ["region"]
+    }
+  },
+  "relationships": {
+    "Allocate": {
+      "properties": ["priority"],
+      "mappings": [
+        { "source": "Application", "destination": "Server" },
+        { "source": "Application", "destination": "Environment" }
+      ]
+    },
+    "DependsOn": {
+      "properties": ["dependency_type"],
+      "mappings": [
+        { "source": "Application", "destination": "Application" }
+      ]
+    },
+    "Contains": {
+      "properties": [],
+      "mappings": [
+        { "source": "Domain", "destination": "Application" },
+        { "source": "Environment", "destination": "Server" }
+      ]
+    }
+  }
+}
