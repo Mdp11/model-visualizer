@@ -2,7 +2,7 @@
   "elements": {
     "Domain": {
       "is_owned_by_one_of": [],
-      "is_typed_by_one_of": ["DomainType"],
+      "is_typed_by_one_of": [],
       "id_properties": ["name"],
       "properties": ["level", "owner"],
       "optional_properties": ["description", "cost_center"]
@@ -17,7 +17,7 @@
     },
     "Application": {
       "is_owned_by_one_of": ["Domain", "Subdomain"],
-      "is_typed_by_one_of": ["ApplicationType"],
+      "is_typed_by_one_of": [],
       "id_properties": ["name"],
       "properties": ["version", "status", "tier"],
       "optional_properties": ["description", "vendor", "license_type"]
@@ -25,7 +25,7 @@
     "WebApplication": {
       "extend": "Application",
       "is_owned_by_one_of": [],
-      "is_typed_by_one_of": ["WebFrameworkType"],
+      "is_typed_by_one_of": [],
       "id_properties": [],
       "properties": ["url", "framework"],
       "optional_properties": ["cdn_enabled", "ssl_cert_expiry"]
@@ -33,7 +33,7 @@
     "MobileApplication": {
       "extend": "Application",
       "is_owned_by_one_of": [],
-      "is_typed_by_one_of": ["MobilePlatformType"],
+      "is_typed_by_one_of": [],
       "id_properties": [],
       "properties": ["platform", "min_os_version"],
       "optional_properties": ["app_store_url", "push_enabled"]
@@ -41,14 +41,14 @@
     "BatchJob": {
       "extend": "Application",
       "is_owned_by_one_of": [],
-      "is_typed_by_one_of": ["SchedulerType"],
+      "is_typed_by_one_of": [],
       "id_properties": [],
       "properties": ["schedule_cron", "max_runtime_minutes"],
       "optional_properties": ["retry_policy", "concurrency_limit"]
     },
     "Service": {
       "is_owned_by_one_of": ["Application", "WebApplication", "MobileApplication"],
-      "is_typed_by_one_of": ["ServiceType"],
+      "is_typed_by_one_of": [],
       "id_properties": ["name"],
       "properties": ["protocol", "port", "status"],
       "optional_properties": ["healthcheck_path", "timeout_ms"]
@@ -56,7 +56,7 @@
     "APIEndpoint": {
       "extend": "Service",
       "is_owned_by_one_of": [],
-      "is_typed_by_one_of": ["APIStyleType"],
+      "is_typed_by_one_of": [],
       "id_properties": [],
       "properties": ["base_path", "auth_method"],
       "optional_properties": ["rate_limit", "api_version", "openapi_spec_url"]
@@ -64,21 +64,21 @@
     "MessageQueue": {
       "extend": "Service",
       "is_owned_by_one_of": [],
-      "is_typed_by_one_of": ["BrokerType"],
+      "is_typed_by_one_of": [],
       "id_properties": [],
       "properties": ["topic", "consumer_group"],
       "optional_properties": ["retention_hours", "max_message_size_kb", "dlq_enabled"]
     },
     "Environment": {
       "is_owned_by_one_of": ["Domain"],
-      "is_typed_by_one_of": ["EnvironmentType"],
+      "is_typed_by_one_of": [],
       "id_properties": ["name"],
       "properties": ["stage", "region"],
       "optional_properties": ["vpc_id", "cost_tag"]
     },
     "Server": {
       "is_owned_by_one_of": ["Environment"],
-      "is_typed_by_one_of": ["ServerType"],
+      "is_typed_by_one_of": [],
       "id_properties": ["hostname"],
       "properties": ["os", "ip_address", "status"],
       "optional_properties": ["cpu_count", "memory_gb", "disk_gb"]
@@ -86,7 +86,7 @@
     "VirtualMachine": {
       "extend": "Server",
       "is_owned_by_one_of": [],
-      "is_typed_by_one_of": ["HypervisorType"],
+      "is_typed_by_one_of": [],
       "id_properties": [],
       "properties": ["image_id", "instance_type"],
       "optional_properties": ["auto_scaling_group", "spot_eligible"]
@@ -94,14 +94,14 @@
     "Container": {
       "extend": "Server",
       "is_owned_by_one_of": [],
-      "is_typed_by_one_of": ["ContainerRuntimeType"],
+      "is_typed_by_one_of": [],
       "id_properties": [],
       "properties": ["image_repo", "image_tag"],
       "optional_properties": ["cpu_request", "memory_request", "namespace"]
     },
     "Database": {
       "is_owned_by_one_of": ["Environment"],
-      "is_typed_by_one_of": ["DatabaseEngineType"],
+      "is_typed_by_one_of": ["Server"],
       "id_properties": ["name"],
       "properties": ["engine", "version", "port"],
       "optional_properties": ["storage_gb", "replicas", "backup_schedule", "encrypted"]
@@ -115,28 +115,28 @@
     },
     "Network": {
       "is_owned_by_one_of": ["Environment"],
-      "is_typed_by_one_of": ["NetworkType"],
+      "is_typed_by_one_of": [],
       "id_properties": ["name"],
       "properties": ["cidr", "zone"],
       "optional_properties": ["gateway", "dns_servers"]
     },
     "LoadBalancer": {
       "is_owned_by_one_of": ["Network"],
-      "is_typed_by_one_of": ["LoadBalancerType"],
+      "is_typed_by_one_of": ["Server"],
       "id_properties": ["name"],
       "properties": ["algorithm", "listener_port"],
       "optional_properties": ["ssl_policy", "idle_timeout_sec"]
     },
     "Team": {
       "is_owned_by_one_of": ["Domain", "Subdomain"],
-      "is_typed_by_one_of": ["TeamType"],
+      "is_typed_by_one_of": [],
       "id_properties": ["name"],
       "properties": ["lead", "email"],
       "optional_properties": ["slack_channel", "on_call_rotation"]
     },
     "Pipeline": {
       "is_owned_by_one_of": ["Team"],
-      "is_typed_by_one_of": ["PipelineType"],
+      "is_typed_by_one_of": ["Environment"],
       "id_properties": ["name"],
       "properties": ["trigger", "target_env"],
       "optional_properties": ["approval_required", "parallel_stages"]
