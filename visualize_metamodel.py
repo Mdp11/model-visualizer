@@ -233,16 +233,10 @@ def build_node_label(data):
 
     for p in data.get("id_properties", []):
         lines.append(f"🔑 {p}")
-    for p in data.get("inherited_id_properties", []):
-        lines.append(f"🔑 {p} ↑")
     for p in data.get("properties", []):
         lines.append(f"📌 {p}")
-    for p in data.get("inherited_properties", []):
-        lines.append(f"📌 {p} ↑")
     for p in data.get("optional_properties", []):
         lines.append(f"❓  {p}")
-    for p in data.get("inherited_optional_properties", []):
-        lines.append(f"❓  {p} ↑")
 
     return "\n".join(lines)
 
@@ -714,15 +708,12 @@ function rebuildLabels() {{
 
     if (propVisibility.id) {{
       (d.id_properties || []).forEach(p => lines.push('🔑 ' + p));
-      (d.inherited_id_properties || []).forEach(p => lines.push('🔑 ' + p + ' ↑'));
     }}
     if (propVisibility.mandatory) {{
       (d.properties || []).forEach(p => lines.push('📌 ' + p));
-      (d.inherited_properties || []).forEach(p => lines.push('📌 ' + p + ' ↑'));
     }}
     if (propVisibility.optional) {{
       (d.optional_properties || []).forEach(p => lines.push('❓  ' + p));
-      (d.inherited_optional_properties || []).forEach(p => lines.push('❓  ' + p + ' ↑'));
     }}
 
     node.data('_label', lines.join('\\n'));
