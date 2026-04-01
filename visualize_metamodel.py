@@ -132,35 +132,48 @@ def build_graph_data(resolved, relationships, parent_of):
     # Color palette for relationships
     palette = ["#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#f78c6b", "#b07cc6", "#26c6da", "#ff6b6b", "#78e08f", "#e056a0"]
 
+    # Determine which elements are parents (extended by others)
+    is_parent = set(parent_of.values())
+
     # Element nodes
     for name, data in resolved.items():
         own = data["own"]
         inh = data["inherited"]
-        nodes.append({
-            "data": {
-                "id": name,
-                "label": name,
-                "type": "element",
-                "id_properties": own["id_properties"],
-                "properties": own["properties"],
-                "optional_properties": own["optional_properties"],
-                "inherited_id_properties": inh["id_properties"],
-                "inherited_properties": inh["properties"],
-                "inherited_optional_properties": inh["optional_properties"],
-                "owners": own["is_owned_by_one_of"] + inh["is_owned_by_one_of"],
-                "typed_by": own["is_typed_by_one_of"] + inh["is_typed_by_one_of"],
-                "extends": data.get("extend"),
-            }
-        })
+        is_child = name in parent_of
+        node_data = {
+            "id": name,
+            "label": name,
+            "type": "element",
+            "id_properties": own["id_properties"],
+            "properties": own["properties"],
+            "optional_properties": own["optional_properties"],
+            "owners": own["is_owned_by_one_of"] + inh["is_owned_by_one_of"],
+            "typed_by": own["is_typed_by_one_of"] + inh["is_typed_by_one_of"],
+            "extends": data.get("extend"),
+        }
+        # Children only show own properties; non-children show inherited too
+        if not is_child:
+            node_data["inherited_id_properties"] = inh["id_properties"]
+            node_data["inherited_properties"] = inh["properties"]
+            node_data["inherited_optional_properties"] = inh["optional_properties"]
+        else:
+            node_data["inherited_id_properties"] = []
+            node_data["inherited_properties"] = []
+            node_data["inherited_optional_properties"] = []
+            # Set parent for compound nesting
+            node_data["parent"] = parent_of[name]
+        if name in is_parent:
+            node_data["isParent"] = True
+        nodes.append({"data": node_data})
 
-    # Type nodes
-    type_nodes = set()
+    # Typing edges (to other elements)
+    all_element_names = set(resolved.keys())
     for name, data in resolved.items():
         all_types = data["own"]["is_typed_by_one_of"] + data["inherited"]["is_typed_by_one_of"]
         for t in all_types:
-            if t not in type_nodes:
-                type_nodes.add(t)
-                nodes.append({"data": {"id": t, "label": t, "type": "type_node"}})
+            if t not in all_element_names:
+                print(f"Error: element '{name}' is_typed_by '{t}', which does not exist.", file=sys.stderr)
+                sys.exit(1)
             edges.append({"data": {"id": f"e{edge_id}", "source": t, "target": name, "label": "types", "edgeType": "typing"}})
             edge_id += 1
 
@@ -170,11 +183,6 @@ def build_graph_data(resolved, relationships, parent_of):
         for owner in all_owners:
             edges.append({"data": {"id": f"e{edge_id}", "source": owner, "target": name, "label": "owns", "edgeType": "ownership"}})
             edge_id += 1
-
-    # Extends edges
-    for child, parent in parent_of.items():
-        edges.append({"data": {"id": f"e{edge_id}", "source": child, "target": parent, "label": "extends", "edgeType": "extends"}})
-        edge_id += 1
 
     # Relationship edges
     rel_colors = {}
@@ -237,7 +245,7 @@ def generate_html(cy_elements, rel_colors):
 
     rel_legend_items = ""
     for rel_name, color in rel_colors.items():
-        rel_legend_items += f'  <div><span class="swatch" style="background:{color}"></span> {rel_name}</div>\n'
+        rel_legend_items += f'  <div><label class="legend-toggle"><input type="checkbox" checked onchange="toggleEdgeClass(\'relationship\', \'{rel_name}\', this.checked)" data-edge-rel="{rel_name}"><span class="swatch" style="background:{color}"></span> {rel_name}</label></div>\n'
 
     return f"""<!DOCTYPE html>
 <html>
@@ -400,6 +408,17 @@ def generate_html(cy_elements, rel_colors):
   .search-counter {{
     font-size: 11px; color: var(--text-dimmed); margin-left: 4px; white-space: nowrap;
   }}
+  #legend .legend-btns {{ display: flex; gap: 4px; }}
+  #legend .legend-btns button {{
+    background: var(--bg-btn); color: var(--text-muted); border: 1px solid var(--border);
+    padding: 2px 8px; border-radius: 4px; font-size: 10px; cursor: pointer;
+    transition: background 0.15s;
+  }}
+  #legend .legend-btns button:hover {{ background: var(--bg-btn-hover); color: var(--text); }}
+  #legend .legend-toggle {{
+    display: flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap;
+  }}
+  #legend .legend-toggle input {{ accent-color: var(--accent); cursor: pointer; margin: 0; }}
   #legend .swatch-dashed {{ background: repeating-linear-gradient(90deg, var(--edge-ownership) 0, var(--edge-ownership) 6px, transparent 6px, transparent 10px); }}
   #legend .swatch-dotted {{ background: repeating-linear-gradient(90deg, var(--edge-typing) 0, var(--edge-typing) 3px, transparent 3px, transparent 7px); }}
 </style>
@@ -417,7 +436,7 @@ def generate_html(cy_elements, rel_colors):
         <label><input type="checkbox" checked class="search-scope" value="elements"> Element names</label>
         <label><input type="checkbox" checked class="search-scope" value="properties"> Properties</label>
         <label><input type="checkbox" checked class="search-scope" value="relationships"> Relationships</label>
-        <label><input type="checkbox" checked class="search-scope" value="types"> Types</label>
+        <label><input type="checkbox" checked class="search-scope" value="types"> Typed by</label>
       </div>
     </div>
     <button class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark mode" id="themeBtn">&#9789;</button>
@@ -458,10 +477,9 @@ def generate_html(cy_elements, rel_colors):
 <div id="cy"></div>
 <div id="tooltip"></div>
 <div id="legend">
-  <div class="title">Edge Types</div>
-{rel_legend_items}  <div><span class="swatch swatch-dashed"></span> Ownership</div>
-  <div><span class="swatch swatch-dotted"></span> Typing</div>
-  <div><span class="swatch" style="background:var(--edge-extends)"></span> Extends</div>
+  <div class="title" style="display:flex;justify-content:space-between;align-items:center;">Edge Types <span class="legend-btns"><button onclick="setAllEdges(true)">All</button><button onclick="setAllEdges(false)">None</button></span></div>
+{rel_legend_items}  <div><label class="legend-toggle"><input type="checkbox" checked onchange="toggleEdgeClass('ownership', null, this.checked)"><span class="swatch swatch-dashed"></span> Ownership</label></div>
+  <div><label class="legend-toggle"><input type="checkbox" checked onchange="toggleEdgeClass('typing', null, this.checked)"><span class="swatch swatch-dotted"></span> Typing</label></div>
 </div>
 
 <script>
@@ -496,24 +514,26 @@ const cy = cytoscape({{
         'text-justification': 'left',
       }}
     }},
-    // Type nodes
+    // Parent (compound) element nodes
     {{
-      selector: 'node[type="type_node"]',
+      selector: 'node[type="element"][isParent]',
       style: {{
         'shape': 'round-rectangle',
-        'background-color': '#2a2a3e',
-        'border-color': '#533483',
-        'border-width': 1,
-        'border-style': 'dashed',
-        'label': 'data(label)',
-        'color': '#a8a8b8',
-        'text-valign': 'center',
+        'background-color': '#12121f',
+        'border-color': '#e94560',
+        'border-width': 2,
+        'label': 'data(_label)',
+        'color': '#e6edf3',
+        'text-valign': 'top',
         'text-halign': 'center',
-        'font-size': '11px',
-        'font-style': 'italic',
-        'width': 'label',
-        'height': 'label',
-        'padding': '14px',
+        'font-size': '12px',
+        'font-family': 'monospace',
+        'padding': '30px',
+        'text-wrap': 'wrap',
+        'text-max-width': '400px',
+        'text-justification': 'left',
+        'text-margin-y': 10,
+        'compound-sizing-wrt-labels': 'include',
       }}
     }},
     // Relationship edges (default — colored per-relationship via mappers below)
@@ -586,26 +606,6 @@ const cy = cytoscape({{
         'text-background-shape': 'roundrectangle',
       }}
     }},
-    // Extends edges
-    {{
-      selector: 'edge[edgeType="extends"]',
-      style: {{
-        'width': 2,
-        'line-color': '#5bb88a',
-        'target-arrow-color': '#5bb88a',
-        'target-arrow-shape': 'triangle-backcurve',
-        'curve-style': 'bezier',
-        'label': 'extends',
-        'font-size': '10px',
-        'color': '#5bb88a',
-        'text-rotation': 'autorotate',
-        'text-margin-y': -10,
-        'text-background-color': '#0d1117',
-        'text-background-opacity': 0.85,
-        'text-background-padding': '3px',
-        'text-background-shape': 'roundrectangle',
-      }}
-    }},
   ],
   layout: {{
     name: 'dagre',
@@ -624,12 +624,14 @@ const cy = cytoscape({{
 // Theme toggle
 const darkTheme = {{
   nodeBg: '#1a1a2e', nodeBorder: '#e94560', nodeText: '#e6edf3',
+  parentBg: '#12121f',
   typeBg: '#2a2a3e', typeBorder: '#a07cc6', typeText: '#c4b0e0',
   labelBg: '#0d1117',
   ownership: '#5b9bd5', typing: '#a07cc6', extends: '#5bb88a',
 }};
 const lightTheme = {{
   nodeBg: '#f0f4ff', nodeBorder: '#cf222e', nodeText: '#1f2328',
+  parentBg: '#e8ecf4',
   typeBg: '#f5f0ff', typeBorder: '#7c4daf', typeText: '#6e5494',
   labelBg: '#f6f8fa',
   ownership: '#2c5d8f', typing: '#7c4daf', extends: '#2d7a50',
@@ -642,10 +644,8 @@ function applyThemeToGraph(theme) {{
     'border-color': theme.nodeBorder,
     'color': theme.nodeText,
   }});
-  cy.nodes('[type="type_node"]').style({{
-    'background-color': theme.typeBg,
-    'border-color': theme.typeBorder,
-    'color': theme.typeText,
+  cy.nodes('[type="element"][isParent]').style({{
+    'background-color': theme.parentBg,
   }});
   cy.edges().style({{
     'text-background-color': theme.labelBg,
@@ -694,6 +694,25 @@ document.addEventListener('click', function(e) {{
 // Legend toggle
 function toggleLegend(show) {{
   document.getElementById('legend').style.display = show ? 'block' : 'none';
+}}
+
+// Enable/disable all edges
+function setAllEdges(show) {{
+  document.querySelectorAll('#legend .legend-toggle input').forEach(cb => {{
+    cb.checked = show;
+    cb.dispatchEvent(new Event('change'));
+  }});
+}}
+
+// Toggle edge class visibility
+function toggleEdgeClass(edgeType, relName, show) {{
+  let selector;
+  if (edgeType === 'relationship' && relName) {{
+    selector = `edge[edgeType="relationship"][relName="${{relName}}"]`;
+  }} else {{
+    selector = `edge[edgeType="${{edgeType}}"]`;
+  }}
+  cy.edges(selector).style('display', show ? 'element' : 'none');
 }}
 
 // Hide inherited relationship edges by default
@@ -772,11 +791,9 @@ function highlightEdge(edge) {{
 function clearHighlight() {{
   cy.elements().style('opacity', 1);
   cy.nodes('[type="element"]').style({{ 'border-width': 2, 'border-color': isDark ? darkTheme.nodeBorder : lightTheme.nodeBorder }});
-  cy.nodes('[type="type_node"]').style({{ 'border-width': 1, 'border-color': isDark ? darkTheme.typeBorder : lightTheme.typeBorder }});
   cy.edges('[edgeType="relationship"]').style('width', 2.5);
   cy.edges('[edgeType="ownership"]').style('width', 1.5);
   cy.edges('[edgeType="typing"]').style('width', 1);
-  cy.edges('[edgeType="extends"]').style('width', 2);
   if (!document.getElementById('toggleInherited').checked) {{
     cy.edges('[edgeType="relationship"][inherited]').style('display', 'none');
   }}
@@ -936,8 +953,9 @@ function executeSearch(query) {{
       if (allProps.some(p => p.toLowerCase().includes(q))) matches.add(node.id());
     }}
     // Types
-    if (scopes.types && d.type === 'type_node' && d.label.toLowerCase().includes(q)) {{
-      matches.add(node.id());
+    // Typed-by (check if any typed_by values match)
+    if (scopes.types && d.type === 'element' && d.typed_by) {{
+      if (d.typed_by.some(t => t.toLowerCase().includes(q))) matches.add(node.id());
     }}
   }});
 
@@ -995,11 +1013,9 @@ function panToMatch() {{
 function clearSearchHighlight() {{
   cy.elements().style('opacity', 1);
   cy.nodes('[type="element"]').style({{ 'border-width': 2, 'border-color': isDark ? darkTheme.nodeBorder : lightTheme.nodeBorder }});
-  cy.nodes('[type="type_node"]').style({{ 'border-width': 1, 'border-color': isDark ? darkTheme.typeBorder : lightTheme.typeBorder }});
   cy.edges('[edgeType="relationship"]').style('width', 2.5);
   cy.edges('[edgeType="ownership"]').style('width', 1.5);
   cy.edges('[edgeType="typing"]').style('width', 1);
-  cy.edges('[edgeType="extends"]').style('width', 2);
   if (!document.getElementById('toggleInherited').checked) {{
     cy.edges('[edgeType="relationship"][inherited]').style('display', 'none');
   }}
