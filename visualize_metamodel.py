@@ -188,13 +188,12 @@ def build_graph_data(resolved, relationships, parent_of):
             node_data["isParent"] = True
         nodes.append({"data": node_data})
 
-    # Create header + separator child nodes inside each parent, with ordering edges
+    # Create header child node inside each parent, with ordering edges
     for name in is_parent:
         data = resolved[name]
         own = data["own"]
         inh = data["inherited"]
         header_id = f"{name}__header"
-        sep_id = f"{name}__sep"
         nodes.append({"data": {
             "id": header_id,
             "label": name,
@@ -210,17 +209,10 @@ def build_graph_data(resolved, relationships, parent_of):
             "typed_by": own["is_typed_by_one_of"] + inh["is_typed_by_one_of"],
             "extends": data.get("extend"),
         }})
-        nodes.append({"data": {
-            "id": sep_id,
-            "type": "separator",
-            "parent": name,
-        }})
-        # Invisible edges to enforce top-down ordering: header → separator → children
-        edges.append({"data": {"id": f"e{edge_id}", "source": header_id, "target": sep_id, "edgeType": "layout_order"}})
-        edge_id += 1
+        # Invisible edges to enforce top-down ordering: header → children
         for child_name, child_parent in parent_of.items():
             if child_parent == name:
-                edges.append({"data": {"id": f"e{edge_id}", "source": sep_id, "target": child_name, "edgeType": "layout_order"}})
+                edges.append({"data": {"id": f"e{edge_id}", "source": header_id, "target": child_name, "edgeType": "layout_order"}})
                 edge_id += 1
 
     # Typing edges (to other elements)
@@ -291,6 +283,9 @@ def build_node_label(data):
     if not is_child:
         for p in data.get("inherited_optional_properties", []):
             lines.append(f"❓  {p} ↑")
+
+    if data.get("type") == "parent_header":
+        lines.append("━" * max(len(data["label"]), 16))
 
     return "\n".join(lines)
 
@@ -600,7 +595,7 @@ const cy = cytoscape({{
       style: {{
         'shape': 'round-rectangle',
         'background-color': '#1a1a2e',
-        'border-color': '#ffd166',
+        'border-color': '#e94560',
         'border-width': 2,
         'label': 'data(_label)',
         'color': '#e6edf3',
@@ -614,19 +609,6 @@ const cy = cytoscape({{
         'text-wrap': 'wrap',
         'text-max-width': '300px',
         'text-justification': 'left',
-      }}
-    }},
-    // Separator line inside compound
-    {{
-      selector: 'node[type="separator"]',
-      style: {{
-        'shape': 'rectangle',
-        'background-color': '#444466',
-        'border-width': 0,
-        'width': 200,
-        'height': 2,
-        'label': '',
-        'events': 'no',
       }}
     }},
     // Invisible ordering edges inside compounds
@@ -751,11 +733,8 @@ function applyThemeToGraph(theme) {{
   }});
   cy.nodes('[type="parent_header"]').style({{
     'background-color': theme.nodeBg,
-    'border-color': isDark ? '#ffd166' : '#d4a017',
+    'border-color': theme.nodeBorder,
     'color': theme.nodeText,
-  }});
-  cy.nodes('[type="separator"]').style({{
-    'background-color': isDark ? '#444466' : '#b0b0c8',
   }});
   cy.edges().style({{
     'text-background-color': theme.labelBg,
@@ -818,6 +797,10 @@ function rebuildLabels() {{
     if (propVisibility.optional) {{
       (d.optional_properties || []).forEach(p => lines.push('❓  ' + p));
       if (!isChild) (d.inherited_optional_properties || []).forEach(p => lines.push('❓  ' + p + ' ↑'));
+    }}
+
+    if (d.type === 'parent_header') {{
+      lines.push('━'.repeat(Math.max(d.label.length, 16)));
     }}
 
     node.data('_label', lines.join('\\n'));
@@ -911,7 +894,8 @@ function dimMode() {{
 }}
 
 function highlightNode(node) {{
-  const connected = node.connectedEdges().filter(e => e.style('display') !== 'none');
+  const refNode = node.data('type') === 'parent_header' ? cy.getElementById(node.data('parent')) : node;
+  const connected = refNode.connectedEdges().filter(e => e.style('display') !== 'none' && e.data('edgeType') !== 'layout_order');
   const neighbors = connected.connectedNodes();
   if (dimMode()) {{
     cy.elements().style('opacity', DIM_OPACITY);
@@ -941,10 +925,11 @@ function highlightEdge(edge) {{
 function clearHighlight() {{
   cy.elements().style('opacity', 1);
   cy.nodes('[type="element"]').style({{ 'border-width': 2, 'border-color': isDark ? darkTheme.nodeBorder : lightTheme.nodeBorder }});
-  cy.nodes('[type="parent_header"]').style({{ 'border-width': 2, 'border-color': isDark ? '#ffd166' : '#d4a017' }});
+  cy.nodes('[type="parent_header"]').style({{ 'border-width': 2, 'border-color': isDark ? darkTheme.nodeBorder : lightTheme.nodeBorder }});
   cy.edges('[edgeType="relationship"]').style('width', 2.5);
   cy.edges('[edgeType="ownership"]').style('width', 1.5);
   cy.edges('[edgeType="typing"]').style('width', 1);
+  cy.edges('[edgeType="layout_order"]').style({{ 'width': 0, 'opacity': 0 }});
   if (!document.getElementById('toggleInherited').checked) {{
     cy.edges('[edgeType="relationship"][inherited]').style('display', 'none');
   }}
@@ -964,6 +949,8 @@ cy.on('mouseout', 'node, edge', function() {{
 cy.on('mouseover', 'node[type="element"], node[type="parent_header"]', function(e) {{
   if (!document.getElementById('toggleElementHover').checked) return;
   const d = e.target.data();
+  const refNode = d.type === 'parent_header' ? cy.getElementById(d.parent) : e.target;
+  const refId = d.type === 'parent_header' ? d.parent : d.id;
   let html = `<div class="tt-name">${{d.label}}</div>`;
 
   const idProps = (d.id_properties || []).map(p => `<span class="tt-key"><span class="tt-icon">🔑</span>${{p}}</span>`);
@@ -995,12 +982,12 @@ cy.on('mouseover', 'node[type="element"], node[type="parent_header"]', function(
   }}
 
   // Show relationships (direct + inherited in one section)
-  const allRelEdges = e.target.connectedEdges('[edgeType="relationship"]');
+  const allRelEdges = refNode.connectedEdges('[edgeType="relationship"]');
   if (allRelEdges.length > 0) {{
     const rels = [];
     allRelEdges.forEach(edge => {{
       const ed = edge.data();
-      const isSource = ed.source === d.id;
+      const isSource = ed.source === refId;
       const other = isSource ? ed.target : ed.source;
       const dirWord = isSource ? '<span class="tt-dir">to</span>' : '<span class="tt-dir">from</span>';
       // Only show ↑ if this node is on the inherited side
@@ -1160,7 +1147,7 @@ function applySearchHighlight() {{
   cy.elements().style('opacity', DIM_OPACITY);
   searchMatches.forEach(node => {{
     node.style({{ 'opacity': 1, 'border-width': HL_BORDER, 'border-color': HL_COLOR }});
-    const connected = node.connectedEdges().filter(e => e.style('display') !== 'none');
+    const connected = node.connectedEdges().filter(e => e.style('display') !== 'none' && e.data('edgeType') !== 'layout_order');
     connected.style({{ 'opacity': 1, 'width': HL_EDGE }});
     connected.connectedNodes().style('opacity', 0.6);
   }});
@@ -1186,10 +1173,11 @@ function panToMatch() {{
 function clearSearchHighlight() {{
   cy.elements().style('opacity', 1);
   cy.nodes('[type="element"]').style({{ 'border-width': 2, 'border-color': isDark ? darkTheme.nodeBorder : lightTheme.nodeBorder }});
-  cy.nodes('[type="parent_header"]').style({{ 'border-width': 2, 'border-color': isDark ? '#ffd166' : '#d4a017' }});
+  cy.nodes('[type="parent_header"]').style({{ 'border-width': 2, 'border-color': isDark ? darkTheme.nodeBorder : lightTheme.nodeBorder }});
   cy.edges('[edgeType="relationship"]').style('width', 2.5);
   cy.edges('[edgeType="ownership"]').style('width', 1.5);
   cy.edges('[edgeType="typing"]').style('width', 1);
+  cy.edges('[edgeType="layout_order"]').style({{ 'width': 0, 'opacity': 0 }});
   if (!document.getElementById('toggleInherited').checked) {{
     cy.edges('[edgeType="relationship"][inherited]').style('display', 'none');
   }}
