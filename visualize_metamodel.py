@@ -158,14 +158,10 @@ def build_graph_data(resolved, relationships, parent_of):
     # Color palette for relationships
     palette = ["#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#f78c6b", "#b07cc6", "#26c6da", "#ff6b6b", "#78e08f", "#e056a0"]
 
-    # Determine which elements are parents (extended by others)
-    is_parent = set(parent_of.values())
-
     # Element nodes
     for name, data in resolved.items():
         own = data["own"]
         inh = data["inherited"]
-        is_child = name in parent_of
         node_data = {
             "id": name,
             "label": name,
@@ -176,44 +172,16 @@ def build_graph_data(resolved, relationships, parent_of):
             "owners": own["is_owned_by_one_of"] + inh["is_owned_by_one_of"],
             "typed_by": own["is_typed_by_one_of"] + inh["is_typed_by_one_of"],
             "extends": data.get("extend"),
-        }
-        # Always store inherited props for tooltip
-        node_data["inherited_id_properties"] = inh["id_properties"]
-        node_data["inherited_properties"] = inh["properties"]
-        node_data["inherited_optional_properties"] = inh["optional_properties"]
-        if is_child:
-            # Set parent for compound nesting
-            node_data["parent"] = parent_of[name]
-        if name in is_parent:
-            node_data["isParent"] = True
-        nodes.append({"data": node_data})
-
-    # Create header child node inside each parent, with ordering edges
-    for name in is_parent:
-        data = resolved[name]
-        own = data["own"]
-        inh = data["inherited"]
-        header_id = f"{name}__header"
-        nodes.append({"data": {
-            "id": header_id,
-            "label": name,
-            "type": "parent_header",
-            "parent": name,
-            "id_properties": own["id_properties"],
-            "properties": own["properties"],
-            "optional_properties": own["optional_properties"],
             "inherited_id_properties": inh["id_properties"],
             "inherited_properties": inh["properties"],
             "inherited_optional_properties": inh["optional_properties"],
-            "owners": own["is_owned_by_one_of"] + inh["is_owned_by_one_of"],
-            "typed_by": own["is_typed_by_one_of"] + inh["is_typed_by_one_of"],
-            "extends": data.get("extend"),
-        }})
-        # Invisible edges to enforce top-down ordering: header → children
-        for child_name, child_parent in parent_of.items():
-            if child_parent == name:
-                edges.append({"data": {"id": f"e{edge_id}", "source": header_id, "target": child_name, "edgeType": "layout_order"}})
-                edge_id += 1
+        }
+        nodes.append({"data": node_data})
+
+    # Extends edges
+    for child_name, parent_name in parent_of.items():
+        edges.append({"data": {"id": f"e{edge_id}", "source": child_name, "target": parent_name, "label": "extends", "edgeType": "extends"}})
+        edge_id += 1
 
     # Typing edges (to other elements)
     for name, data in resolved.items():
@@ -261,31 +229,20 @@ def build_graph_data(resolved, relationships, parent_of):
 
 def build_node_label(data):
     """Build multi-line label for element nodes."""
-    # Parent compound containers have no label
-    if data.get("isParent"):
-        return ""
-    # Children of compounds skip inherited props; header nodes show own props
-    is_child = data.get("type") == "element" and "parent" in data
     lines = [data["label"], "─" * max(len(data["label"]), 12)]
 
     for p in data.get("id_properties", []):
         lines.append(f"🔑 {p}")
-    if not is_child:
-        for p in data.get("inherited_id_properties", []):
-            lines.append(f"🔑 {p} ↑")
+    for p in data.get("inherited_id_properties", []):
+        lines.append(f"🔑 {p} ↑")
     for p in data.get("properties", []):
         lines.append(f"📌 {p}")
-    if not is_child:
-        for p in data.get("inherited_properties", []):
-            lines.append(f"📌 {p} ↑")
+    for p in data.get("inherited_properties", []):
+        lines.append(f"📌 {p} ↑")
     for p in data.get("optional_properties", []):
         lines.append(f"❓  {p}")
-    if not is_child:
-        for p in data.get("inherited_optional_properties", []):
-            lines.append(f"❓  {p} ↑")
-
-    if data.get("type") == "parent_header":
-        lines.append("━" * max(len(data["label"]), 16))
+    for p in data.get("inherited_optional_properties", []):
+        lines.append(f"❓  {p} ↑")
 
     return "\n".join(lines)
 
@@ -295,7 +252,7 @@ def generate_html(cy_elements, rel_colors):
 
     # Pre-process: build labels for element nodes
     for el in cy_elements:
-        if "data" in el and el["data"].get("type") in ("element", "parent_header"):
+        if "data" in el and el["data"].get("type") == "element":
             el["data"]["_label"] = build_node_label(el["data"])
 
     elements_json = json.dumps(cy_elements, indent=2)
@@ -539,6 +496,7 @@ def generate_html(cy_elements, rel_colors):
   <div class="title" style="display:flex;justify-content:space-between;align-items:center;">Edge Types <span class="legend-btns"><button onclick="setAllEdges(true)">All</button><button onclick="setAllEdges(false)">None</button></span></div>
 {rel_legend_items}  <div><label class="legend-toggle"><input type="checkbox" checked onchange="toggleEdgeClass('ownership', null, this.checked)"><span class="swatch swatch-dashed"></span> Ownership</label></div>
   <div><label class="legend-toggle"><input type="checkbox" checked onchange="toggleEdgeClass('typing', null, this.checked)"><span class="swatch swatch-dotted"></span> Typing</label></div>
+  <div><label class="legend-toggle"><input type="checkbox" checked onchange="toggleEdgeClass('extends', null, this.checked)"><span class="swatch" style="background:var(--edge-extends)"></span> Extends</label></div>
   <div class="title" style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">Properties <span class="legend-btns"><button onclick="setAllProps(true)">All</button><button onclick="setAllProps(false)">None</button></span></div>
   <div><label class="legend-toggle"><input type="checkbox" checked class="prop-toggle" value="id" onchange="togglePropType(this.value, this.checked)">🔑 ID (generates identifier)</label></div>
   <div><label class="legend-toggle"><input type="checkbox" checked class="prop-toggle" value="mandatory" onchange="togglePropType(this.value, this.checked)">📌 Mandatory</label></div>
@@ -577,47 +535,25 @@ const cy = cytoscape({{
         'text-justification': 'left',
       }}
     }},
-    // Parent (compound) container — no label, just the outer box
+    // Extends edges
     {{
-      selector: 'node[type="element"][isParent]',
+      selector: 'edge[edgeType="extends"]',
       style: {{
-        'shape': 'round-rectangle',
-        'background-color': '#12121f',
-        'border-color': '#e94560',
-        'border-width': 2,
-        'label': '',
-        'padding': '15px',
-      }}
-    }},
-    // Header node inside compound (base element name + properties)
-    {{
-      selector: 'node[type="parent_header"]',
-      style: {{
-        'shape': 'round-rectangle',
-        'background-color': '#1a1a2e',
-        'border-color': '#e94560',
-        'border-width': 2,
-        'label': 'data(_label)',
-        'color': '#e6edf3',
-        'text-valign': 'center',
-        'text-halign': 'center',
-        'font-size': '12px',
-        'font-family': 'monospace',
-        'width': 'label',
-        'height': 'label',
-        'padding': '20px',
-        'text-wrap': 'wrap',
-        'text-max-width': '300px',
-        'text-justification': 'left',
-      }}
-    }},
-    // Invisible ordering edges inside compounds
-    {{
-      selector: 'edge[edgeType="layout_order"]',
-      style: {{
-        'width': 0,
-        'opacity': 0,
-        'events': 'no',
+        'width': 2,
+        'line-color': '#5bb88a',
+        'line-style': 'solid',
+        'target-arrow-color': '#5bb88a',
+        'target-arrow-shape': 'triangle',
+        'curve-style': 'bezier',
+        'label': 'extends',
+        'font-size': '10px',
+        'color': '#5bb88a',
+        'text-rotation': 'autorotate',
+        'text-margin-y': -10,
+        'text-background-color': '#0d1117',
+        'text-background-opacity': 0.85,
+        'text-background-padding': '3px',
+        'text-background-shape': 'roundrectangle',
       }}
     }},
     // Relationship edges (default — colored per-relationship via mappers below)
@@ -728,14 +664,6 @@ function applyThemeToGraph(theme) {{
     'border-color': theme.nodeBorder,
     'color': theme.nodeText,
   }});
-  cy.nodes('[type="element"][isParent]').style({{
-    'background-color': theme.parentBg,
-  }});
-  cy.nodes('[type="parent_header"]').style({{
-    'background-color': theme.nodeBg,
-    'border-color': theme.nodeBorder,
-    'color': theme.nodeText,
-  }});
   cy.edges().style({{
     'text-background-color': theme.labelBg,
   }});
@@ -780,27 +708,21 @@ function setAllProps(show) {{
 }}
 
 function rebuildLabels() {{
-  cy.nodes('[type="element"], [type="parent_header"]').forEach(node => {{
+  cy.nodes('[type="element"]').forEach(node => {{
     const d = node.data();
-    if (d.isParent) return;
-    const isChild = d.type === 'element' && !!d.parent;
     const lines = [d.label, '─'.repeat(Math.max(d.label.length, 12))];
 
     if (propVisibility.id) {{
       (d.id_properties || []).forEach(p => lines.push('🔑 ' + p));
-      if (!isChild) (d.inherited_id_properties || []).forEach(p => lines.push('🔑 ' + p + ' ↑'));
+      (d.inherited_id_properties || []).forEach(p => lines.push('🔑 ' + p + ' ↑'));
     }}
     if (propVisibility.mandatory) {{
       (d.properties || []).forEach(p => lines.push('📌 ' + p));
-      if (!isChild) (d.inherited_properties || []).forEach(p => lines.push('📌 ' + p + ' ↑'));
+      (d.inherited_properties || []).forEach(p => lines.push('📌 ' + p + ' ↑'));
     }}
     if (propVisibility.optional) {{
       (d.optional_properties || []).forEach(p => lines.push('❓  ' + p));
-      if (!isChild) (d.inherited_optional_properties || []).forEach(p => lines.push('❓  ' + p + ' ↑'));
-    }}
-
-    if (d.type === 'parent_header') {{
-      lines.push('━'.repeat(Math.max(d.label.length, 16)));
+      (d.inherited_optional_properties || []).forEach(p => lines.push('❓  ' + p + ' ↑'));
     }}
 
     node.data('_label', lines.join('\\n'));
@@ -894,8 +816,7 @@ function dimMode() {{
 }}
 
 function highlightNode(node) {{
-  const refNode = node.data('type') === 'parent_header' ? cy.getElementById(node.data('parent')) : node;
-  const connected = refNode.connectedEdges().filter(e => e.style('display') !== 'none' && e.data('edgeType') !== 'layout_order');
+  const connected = node.connectedEdges().filter(e => e.style('display') !== 'none');
   const neighbors = connected.connectedNodes();
   if (dimMode()) {{
     cy.elements().style('opacity', DIM_OPACITY);
@@ -925,11 +846,10 @@ function highlightEdge(edge) {{
 function clearHighlight() {{
   cy.elements().style('opacity', 1);
   cy.nodes('[type="element"]').style({{ 'border-width': 2, 'border-color': isDark ? darkTheme.nodeBorder : lightTheme.nodeBorder }});
-  cy.nodes('[type="parent_header"]').style({{ 'border-width': 2, 'border-color': isDark ? darkTheme.nodeBorder : lightTheme.nodeBorder }});
   cy.edges('[edgeType="relationship"]').style('width', 2.5);
   cy.edges('[edgeType="ownership"]').style('width', 1.5);
   cy.edges('[edgeType="typing"]').style('width', 1);
-  cy.edges('[edgeType="layout_order"]').style({{ 'width': 0, 'opacity': 0 }});
+  cy.edges('[edgeType="extends"]').style('width', 2);
   if (!document.getElementById('toggleInherited').checked) {{
     cy.edges('[edgeType="relationship"][inherited]').style('display', 'none');
   }}
@@ -946,11 +866,9 @@ cy.on('mouseout', 'node, edge', function() {{
 }});
 
 // Element tooltip
-cy.on('mouseover', 'node[type="element"], node[type="parent_header"]', function(e) {{
+cy.on('mouseover', 'node[type="element"]', function(e) {{
   if (!document.getElementById('toggleElementHover').checked) return;
   const d = e.target.data();
-  const refNode = d.type === 'parent_header' ? cy.getElementById(d.parent) : e.target;
-  const refId = d.type === 'parent_header' ? d.parent : d.id;
   let html = `<div class="tt-name">${{d.label}}</div>`;
 
   const idProps = (d.id_properties || []).map(p => `<span class="tt-key"><span class="tt-icon">🔑</span>${{p}}</span>`);
@@ -982,12 +900,12 @@ cy.on('mouseover', 'node[type="element"], node[type="parent_header"]', function(
   }}
 
   // Show relationships (direct + inherited in one section)
-  const allRelEdges = refNode.connectedEdges('[edgeType="relationship"]');
+  const allRelEdges = e.target.connectedEdges('[edgeType="relationship"]');
   if (allRelEdges.length > 0) {{
     const rels = [];
     allRelEdges.forEach(edge => {{
       const ed = edge.data();
-      const isSource = ed.source === refId;
+      const isSource = ed.source === d.id;
       const other = isSource ? ed.target : ed.source;
       const dirWord = isSource ? '<span class="tt-dir">to</span>' : '<span class="tt-dir">from</span>';
       // Only show ↑ if this node is on the inherited side
@@ -1099,7 +1017,7 @@ function executeSearch(query) {{
 
   cy.nodes().forEach(node => {{
     const d = node.data();
-    const isElem = d.type === 'element' || d.type === 'parent_header';
+    const isElem = d.type === 'element';
     // Element names
     if (scopes.elements && isElem && d.label.toLowerCase().includes(q)) {{
       matches.add(node.id());
@@ -1147,7 +1065,7 @@ function applySearchHighlight() {{
   cy.elements().style('opacity', DIM_OPACITY);
   searchMatches.forEach(node => {{
     node.style({{ 'opacity': 1, 'border-width': HL_BORDER, 'border-color': HL_COLOR }});
-    const connected = node.connectedEdges().filter(e => e.style('display') !== 'none' && e.data('edgeType') !== 'layout_order');
+    const connected = node.connectedEdges().filter(e => e.style('display') !== 'none');
     connected.style({{ 'opacity': 1, 'width': HL_EDGE }});
     connected.connectedNodes().style('opacity', 0.6);
   }});
@@ -1173,11 +1091,10 @@ function panToMatch() {{
 function clearSearchHighlight() {{
   cy.elements().style('opacity', 1);
   cy.nodes('[type="element"]').style({{ 'border-width': 2, 'border-color': isDark ? darkTheme.nodeBorder : lightTheme.nodeBorder }});
-  cy.nodes('[type="parent_header"]').style({{ 'border-width': 2, 'border-color': isDark ? darkTheme.nodeBorder : lightTheme.nodeBorder }});
   cy.edges('[edgeType="relationship"]').style('width', 2.5);
   cy.edges('[edgeType="ownership"]').style('width', 1.5);
   cy.edges('[edgeType="typing"]').style('width', 1);
-  cy.edges('[edgeType="layout_order"]').style({{ 'width': 0, 'opacity': 0 }});
+  cy.edges('[edgeType="extends"]').style('width', 2);
   if (!document.getElementById('toggleInherited').checked) {{
     cy.edges('[edgeType="relationship"][inherited]').style('display', 'none');
   }}
